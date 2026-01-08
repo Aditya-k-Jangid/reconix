@@ -384,8 +384,6 @@ The author is not responsible for misuse or damage caused by this tool.
 - Operating System: Linux (Kali Linux, Ubuntu, Debian)
 - Python Version: 3.8 or higher
 - Privileges: Root/sudo access
-- RAM: Minimum 2GB
-- Storage: 500MB for tool and dependencies
 
 ### Network Requirements
 - Active network interface
@@ -461,11 +459,8 @@ This project is provided as-is for educational and authorized security testing p
 
 ---
 
-**Author:** CyberSec Student  
+**Author:** [Sawsagee](https://github.com/Aditya-k-Jangid)  
 **Version:** 1.0  
-**Last Updated:** 2024
-
-**Q: Can I contribute new modules?**  
-A: Yes! Fork the repo, add your module, and submit a pull request.
+**Last Updated:** 2026
 
 ---
